@@ -1,6 +1,14 @@
 # F50 AirSIM
 
-F50 热点内的 iPhone 通过 AirSIM 接听和发起 SIM 语音通话。使用 Bonjour 配对、局域网控制和 PCM 通道，以及 F50 的 mu300-atd。iPhone 使用原 AirSIM 客户端。
+F50 AirSIM 让 iPhone 通过 F50 的 SIM 接听和拨打电话，支持局域网、公网 TLS 直连和自建云端 Relay 三种连接方式。iPhone 使用原 AirSIM 客户端。
+
+| 连接方式 | 适用场景 | 已验证范围 |
+|---|---|---|
+| 局域网 | iPhone 与 F50 在同一 Wi-Fi，使用 Bonjour 配对 | F50 启动、配对、来电接听及空闲双向 PCM 自检 |
+| 公网 TLS 直连 | iPhone 在外网，经独立 TLS 入口连接 F50 | 配对入口、控制和音频端口的公网 TLS 连通性，未认证控制请求被拒绝 |
+| 自建云端 Relay | iPhone 和 F50 Agent 通过 VPS 交换信令与 WSS 音频 | 真机云端自检通过，公网模拟注册、心跳、命令去重和双向 WSS 音频通过 |
+
+公网真人双向通话和锁屏 APNs 来电仍需分别验收。部署方式见 [公网 TLS 直连与自建 Relay](PUBLIC.md)。
 
 本仓库统一维护 [构建和部署脚本](scripts/)、[F50 公网配对补丁](patches/f50-direct-pairing.patch)及 [VPS 公网配置](PUBLIC.md)。下面的 Fork 分支保留先前的局域网实现供追溯。
 
