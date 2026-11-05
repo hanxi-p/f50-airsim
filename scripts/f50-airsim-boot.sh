@@ -4,7 +4,10 @@ umask 077
 export F50_AIRSIM_ROOT=/mnt/mu300-disk/extra/airsim-f50
 export F50_AIRSIM_RUNTIME=/tmp/airsim-f50-runtime
 cd "$F50_AIRSIM_ROOT"
-mkdir -p "$F50_AIRSIM_RUNTIME"
+# /tmp is shared. Refuse pre-existing symlinks or directories owned by others.
+. "$PWD/run-dir.sh"
+(umask 077; mkdir "$F50_AIRSIM_RUNTIME") 2>/dev/null || :
+run_dir_ours "$F50_AIRSIM_RUNTIME" 0
 chmod 700 "$F50_AIRSIM_RUNTIME"
 exec >>"$F50_AIRSIM_RUNTIME/boot.log" 2>&1
 [ "$(uname -r)" = 5.4.254-gb50db5b6224c ]

@@ -1,4 +1,4 @@
-# 中兴 F50 + AirSIM 通话
+# F50 AirSIM
 
 F50 热点内的 iPhone 通过 AirSIM 接听和发起 SIM 语音通话。使用 Bonjour 配对、局域网控制和 PCM 通道，以及 F50 的 mu300-atd。iPhone 使用原 AirSIM 客户端。
 
@@ -6,9 +6,11 @@ F50 热点内的 iPhone 通过 AirSIM 接听和发起 SIM 语音通话。使用 
 
 | 功能分支 | 内容 |
 |---|---|
-| [airsim-mu300](https://github.com/hanxi-p/airsim-mu300/tree/feature/f50-lan/packaging/f50-lan) | LAN 服务、AT 兼容和私有挂载命名空间 |
-| [mu300-audio](https://github.com/hanxi-p/mu300-audio/tree/feature/f50-lan/tools/f50-lan) | ARM64 本地构建与 CRC 核对 |
-| [mu300-linux](https://github.com/hanxi-p/mu300-linux/tree/feature/f50-lan/tools/f50-lan) | 只读诊断和发布内核配置提取 |
+| [f50-airsim-gateway](https://github.com/hanxi-p/f50-airsim-gateway/tree/feature/f50-lan/packaging/f50-lan) | LAN 服务、AT 兼容和私有挂载命名空间 |
+| [f50-airsim-audio](https://github.com/hanxi-p/f50-airsim-audio/tree/feature/f50-lan/tools/f50-lan) | ARM64 本地构建与 CRC 核对 |
+| [f50-airsim-linux](https://github.com/hanxi-p/f50-airsim-linux/tree/feature/f50-lan/tools/f50-lan) | 只读诊断和发布内核配置提取 |
+
+按 [稳定性检查清单](VALIDATION.md) 验收备份、内核 ABI、开机启动、局域网、公网直连和云端 Relay。上游命令和运行时字段继续使用其原始名称，便于复用现有 AirSIM 客户端和 OpenWrt 工具。
 
 ## 1. 核对设备与恢复入口
 
