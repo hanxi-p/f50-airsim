@@ -1,6 +1,8 @@
-# 中兴 F50 + AirSIM 局域网通话
+# 中兴 F50 + AirSIM 通话
 
 F50 热点内的 iPhone 通过 AirSIM 接听和发起 SIM 语音通话。使用 Bonjour 配对、局域网控制和 PCM 通道，以及 F50 的 mu300-atd。iPhone 使用原 AirSIM 客户端。
+
+本仓库统一维护 [构建和部署脚本](scripts/)、[F50 公网配对补丁](patches/f50-direct-pairing.patch)及 [VPS 公网配置](PUBLIC.md)。下面的 Fork 分支保留先前的局域网实现供追溯。
 
 | 功能分支 | 内容 |
 |---|---|
@@ -35,7 +37,7 @@ Git 归档应保持原始 LF 换行，可用 `git -c core.autocrlf=false archive
 2. 使用设备上 APK v3 的 `apk --no-network --no-logfile --keys-dir KEYDIR verify PACKAGE` 和 `apk --no-network --no-logfile --keys-dir KEYDIR extract --destination apk-files PACKAGE` 解包到私有暂存目录。KEYDIR 只需放该发布公钥。把 apk-files/usr/lib/airsim/deps/airsim-audio-0.1.0-r16.tar.gz 解到暂存根，保留其中的 bin、modules 和 KERNEL 元数据。核对模块清单。签名 APK 内的 agdsp.bin 哈希应为 `378ceea78dbf013e10625e71efd6fab487d727e371884ae8daf078da2828b937`。固件的再分发许可未确认，本仓库无固件副本。
 3. 确认地址适用于设备后，在设备空闲时运行 `bin/mu300-audio-dsp reserve`。读取 /sys/module/audio_reserve/parameters/ranges 和 missing，范围须为 `0xaf700000,0x300000;0xafa00000,0x600000`，且 missing 为 0。保留失败应立即停止。内存保留需要重启才能释放。
 4. 将暂存根移到 /mnt/mu300-disk/extra/airsim-f50 并设 0700。复制网关分支的 f50-airsim-at.sh，另将 f50-airsim-boot.sh 复制为 boot-lan.sh、f50-airsim-lan.sh 复制为 lan-supervisor.sh，权限 0700。
-5. 在构建机执行 `aarch64-linux-gnu-gcc -static -O2 -Wall -Wextra -Werror -o f50-private-mount f50-private-mount.c`，将生成的启动器放到设备暂存根。解引用复制设备原 /usr/bin/mu300-at 为 mu300-at-original，并复制 mu300-linux v2026.10.30.1 的 rootfs/overlay/opt/mu300/lib/run-dir.sh。
+5. 在构建机执行 `aarch64-linux-gnu-gcc -static -O2 -Wall -Wextra -Werror -o f50-private-mount f50-private-mount.c`，将生成的启动器放到设备暂存根。解引用复制设备原 /usr/bin/mu300-at 为 mu300-at-original，并从 [mu300-linux 固定提交](https://github.com/dikeckaan/mu300-linux/blob/833616a6c03a7c0245300c5946d98ec98b09bb94/rootfs/overlay/opt/mu300/lib/run-dir.sh)复制 run-dir.sh。
 6. 创建私有 empty-sms 目录和可执行的 deny-sms.sh，后者两行内容为 `#!/bin/sh` 和 `exit 1`。创建 0700 的 lan-data 目录，已有配对时先停止旧网关再迁移完整目录。将 management.json 设为 0600，内容为 `{"mode":"local","interface":"br-lan","pair_port":8580,"control_port":8581,"pcm_port":8582}`。SMS 屏蔽只作用于 AirSIM 的挂载命名空间。
 7. 安装 f50-airsim.init 和 f50-airsim-reserve.init 为 /etc/init.d/airsim-f50 和 /etc/init.d/airsim-f50-reserve，权限 0755。先在空闲时执行 `/etc/init.d/airsim-f50 start` 验证启动，检查 /tmp/airsim-f50-runtime/boot.log。确认 23 个音频驱动和 sprdphone 声卡、DSP 应答及本地网关状态后，对两个服务执行 enable，再受控重启验收。内存保留失败时网关应停止启动。
 
@@ -46,6 +48,14 @@ wget -q -T 4 --post-data='{}' -O - http://127.0.0.1:7581/pair/start
 ```
 
 iPhone 连上 F50 Wi-Fi，允许 AirSIM 本地网络权限，在 Bonjour 自动发现列表中选择设备，输入限时配对码。R21 会拒绝手动 IP 配对。内部 7580、7581、8575 应绑定回环，LAN 8580、8581、8582 应只绑定可信网段接口。分别验证来电、呼出、两端人声、挂断释放及 Bark 短信回归。空闲音频自检不替代真实通话，锁屏可靠性单独验收。
+
+### 保留局域网短信
+
+Bark 使用系统原有 SMS 路径，各模式均保留。若还希望 AirSIM 在纯局域网模式读取本机短信，可在部署根创建空文件 `local-sms.enabled`，设备空闲时重启 AirSIM 服务。该选项会在 AirSIM 私有命名空间中保留原生短信读取和发送工具。先核对当前 mu300-linux 的工具版本，再用测试短信验收。删除标记并重启服务可恢复隔离。云端模式始终隔离 AirSIM 的短信入口。
+
+## 5. 公网访问
+
+按 [公网 TLS 直连与自建 Relay](PUBLIC.md) 选择部署方式。TLS 直连使用配对、控制、音频三个入口；Relay 通过 HTTPS/WSS 工作，首次局域网配对仍使用 Bonjour。
 
 ## 回滚
 

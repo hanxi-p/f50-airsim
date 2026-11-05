@@ -1,0 +1,126 @@
+diff --git a/cmd/airsim-mu300d/main.go b/cmd/airsim-mu300d/main.go
+index 0f92733..4d6eb41 100644
+--- a/cmd/airsim-mu300d/main.go
++++ b/cmd/airsim-mu300d/main.go
+@@ -438,8 +438,11 @@ func (d *daemon) claim(w http.ResponseWriter, r *http.Request) {
+ 		return
+ 	}
+ 	if claim.WantDirect {
+-		write(w, 409, map[string]string{"error": "Manual-IP pairing is not available in this preview; use Bonjour automatic discovery"})
+-		return
++		peer, _, err := net.SplitHostPort(r.RemoteAddr)
++		if err != nil || peer != d.lan || os.Getenv("AIRSIM_F50_DIRECT_PAIRING") != "1" {
++			write(w, 409, map[string]string{"error": "Direct pairing requires the configured TLS tunnel"})
++			return
++		}
+ 	}
+ 	plaintext, e := s.Open(claim, time.Now())
+ 	if e != nil {
+@@ -494,6 +497,11 @@ func (d *daemon) claim(w http.ResponseWriter, r *http.Request) {
+ 	result["push_configured"] = pushConfigured
+ 	result["configured"] = true
+ 	result["agent_id"] = d.deviceID
++	if claim.WantDirect {
++		result["control_port"] = d.settings.ControlPort
++		result["pcm_port"] = d.settings.PCMPort
++		result["route_proof"] = pairing.DirectRouteProof(localSecret, claim, d.deviceID, d.settings.ControlPort, d.settings.PCMPort)
++	}
+ 	d.mu.Lock()
+ 	d.paired = true
+ 	d.mu.Unlock()
+diff --git a/cmd/airsim-mu300d/main_test.go b/cmd/airsim-mu300d/main_test.go
+index 1d206c4..71075e4 100644
+--- a/cmd/airsim-mu300d/main_test.go
++++ b/cmd/airsim-mu300d/main_test.go
+@@ -46,10 +46,13 @@ func TestManagementMethods(t *testing.T) {
+ 	}
+ }
+ func TestDirectClaimRefusedBeforeConsumingSession(t *testing.T) {
++	t.Setenv("AIRSIM_F50_DIRECT_PAIRING", "0")
+ 	s, _ := pairing.New(time.Now())
+-	d := &daemon{session: s}
++	d := &daemon{session: s, lan: "192.0.2.1"}
+ 	w := httptest.NewRecorder()
+-	d.claim(w, httptest.NewRequest("POST", "/pair/v1/claim", strings.NewReader(`{"want_direct_route":true}`)))
++	req := httptest.NewRequest("POST", "/pair/v1/claim", strings.NewReader(`{"want_direct_route":true}`))
++	req.RemoteAddr = "192.0.2.1:41234"
++	d.claim(w, req)
+ 	if w.Code != 409 {
+ 		t.Fatalf("%d", w.Code)
+ 	}
+@@ -57,3 +60,27 @@ func TestDirectClaimRefusedBeforeConsumingSession(t *testing.T) {
+ 		t.Fatal("unimplemented route destroyed pairing")
+ 	}
+ }
++
++func TestDirectClaimRequiresPairingAuthentication(t *testing.T) {
++	t.Setenv("AIRSIM_F50_DIRECT_PAIRING", "1")
++	s, err := pairing.New(time.Now())
++	if err != nil {
++		t.Fatal(err)
++	}
++	d := &daemon{session: s, lan: "192.0.2.1"}
++	w := httptest.NewRecorder()
++	request := func(peer string) *http.Request {
++		r := httptest.NewRequest("POST", "/pair/v1/claim", strings.NewReader(`{"want_direct_route":true}`))
++		r.RemoteAddr = peer
++		return r
++	}
++	d.claim(w, request("192.0.2.2:41234"))
++	if w.Code != http.StatusConflict {
++		t.Fatalf("remote LAN peer status %d", w.Code)
++	}
++	w = httptest.NewRecorder()
++	d.claim(w, request("192.0.2.1:41234"))
++	if w.Code != http.StatusUnauthorized {
++		t.Fatalf("status %d", w.Code)
++	}
++}
+diff --git a/internal/pairing/direct_test.go b/internal/pairing/direct_test.go
+new file mode 100644
+index 0000000..41d98e8
+--- /dev/null
++++ b/internal/pairing/direct_test.go
+@@ -0,0 +1,18 @@
++package pairing
++
++import "testing"
++
++func TestDirectRouteProof(t *testing.T) {
++	claim := Claim{SessionID: "session-1", ClientPublic: "client-key"}
++	key := "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
++	want := "Z2PT2cAtvHK0V8bxEDO4M6TnGPmmqFxml8cYWCI3SvM"
++	if got := DirectRouteProof(key, claim, "mu300-test", 8581, 8582); got != want {
++		t.Fatal("proof does not match the iOS canonical bytes")
++	}
++	if got := DirectRouteProof(key, claim, "mu300-test", 8582, 8581); got == want {
++		t.Fatal("proof did not bind the port roles")
++	}
++	if got := DirectRouteProof("invalid", claim, "mu300-test", 8581, 8582); got != "" {
++		t.Fatal("invalid secret accepted")
++	}
++}
+diff --git a/internal/pairing/session.go b/internal/pairing/session.go
+index 4aebcbd..d278697 100644
+--- a/internal/pairing/session.go
++++ b/internal/pairing/session.go
+@@ -33,6 +33,19 @@ type Claim struct {
+ 	WantDirect   bool   `json:"want_direct_route"`
+ }
+ 
++// DirectRouteProof binds the accepted pairing to the device and its internal ports.
++// The gateway validates the encoded secret before calling this function.
++func DirectRouteProof(encodedSecret string, claim Claim, agentID string, controlPort, pcmPort int) string {
++	secret, err := base64.RawURLEncoding.DecodeString(encodedSecret)
++	if err != nil || len(secret) != 32 {
++		return ""
++	}
++	defer clear(secret)
++	mac := hmac.New(sha256.New, secret)
++	fmt.Fprintf(mac, "AIRSIM-DIRECT1\n%s\n%s\n%s\n%d\n%d", claim.SessionID, claim.ClientPublic, agentID, controlPort, pcmPort)
++	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
++}
++
+ func New(now time.Time) (*Session, error) {
+ 	private, e := ecdh.X25519().GenerateKey(rand.Reader)
+ 	if e != nil {
