@@ -1,0 +1,17 @@
+[Unit]
+Description=AirSIM direct control and PCM TLS
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/stunnel4 /etc/airsim-direct/tls.conf
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

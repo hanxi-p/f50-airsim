@@ -1,0 +1,20 @@
+diff --git a/push_route_linux.go b/push_route_linux.go
+--- a/push_route_linux.go
++++ b/push_route_linux.go
+@@ -4,10 +4,16 @@ package main
+ 
+ import (
+ 	"net"
++	"os"
+ 	"syscall"
+ )
+ 
+ func configurePushDialer(dialer *net.Dialer) {
++	// OpenWrt policy routing owns egress. Forcing a socket onto the modem
++	// interface bypasses that policy and can make an otherwise reachable Relay fail.
++	if os.Getenv("AIRSIM_RUNTIME_PROFILE") == "mu300-openwrt" {
++		return
++	}
+ 	dialer.Control = func(_, _ string, raw syscall.RawConn) error {
+ 		interfaceName := detectPushWANInterface()
+ 		if interfaceName == "" {
